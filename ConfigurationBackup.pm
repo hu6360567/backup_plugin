@@ -12,6 +12,7 @@
 package test;
 
 use strict;
+use warnings;
 
 use Common::Log;
 use genConfig::Utils;
@@ -21,9 +22,11 @@ use genConfig::SNMP;
 ### Start package init
 
 use genConfig::Plugin;
+
 # SSH and Telnet Library
 use Net::OpenSSH;
 use Net::Telnet;
+use Switch;
 
 our @ISA = qw(genConfig::Plugin);
 
@@ -49,6 +52,7 @@ my %backup_conf = (
         password => undef,
     },
     backup_file => undef,
+    session     => undef,
 );
 
 my %defined_backup_func = (
@@ -167,12 +171,45 @@ sub can_handle {
 }
 
 sub custom_files {
+
     # Wait thread finish
     if ( $backup_conf{use_thread} ) {
         $backup_conf{working_thread}->join();
     }
     else {
         $backup_conf{backup_func}();
+    }
+}
+
+#---------------------------------------------------
+# Setup Session and a generic cmd func
+#---------------------------------------------------
+sub setupSession {
+    switch ( $backup_conf{backup_protocol} ) {
+        my $user     = $backup_conf{backup_auth}{user};
+        my $password = $backup_conf{backup_auth}{password};
+        my $host     = $backup_conf{backup_ip};
+        case 'SSH' {
+            $backup_conf{session} = Net::OpenSSH->new("$user:$password\@$host");
+        }
+        case 'Telnet' {
+            $backup_conf{session} = Net::Telnet->new();
+            $backup_conf{session}->open( $backup_conf{backup_ip} );
+            $backup_conf{session}->login( $backup_conf{back} );
+        }
+        else {
+            Common::Log::Error("Unspported Protol!");
+            die("Unspported Protol!");
+        }
+
+    }
+}
+
+sub cmd {
+    switch ($backup_conf{backup_protocol})
+    {
+        case 'SSH' { return $backup_conf{session}->capture(@_); }
+        case 'Telnet' { return $backup_conf{session}->cmd(@_); }
     }
 }
 
@@ -184,7 +221,15 @@ sub custom_files {
 # which contains all target values.
 #---------------------------------------------------
 sub backup_Cisco {
-    return;
+    my $output;
+
+    $backup_conf{backup_protocol} = 'SSH'
+      unless $backup_conf{backup_protocol};    # Default protocols
+    setupSession();
+    cmd("terminal width 0");
+    cmd("terminal length 0");
+    $output = cmd("show running");
+    return $output;
 }
 
 sub backup_Juniper {
