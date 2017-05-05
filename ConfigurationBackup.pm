@@ -27,6 +27,7 @@ use genConfig::Plugin;
 use Net::OpenSSH;
 use Net::Telnet;
 use Switch;
+use File::Copy qw(move);
 
 our @ISA = qw(genConfig::Plugin);
 
@@ -51,14 +52,14 @@ my %backup_conf = (
         user     => undef,
         password => undef,
     },
-    backup_file => undef,
-    session     => undef,
+    backup_file   => undef,
+    session       => undef,
+    configuration => undef,
 );
 
 my %defined_backup_func = (
     Cisco   => \&backup_Cisco,
     Juniper => \&backup_Juniper,
-    Huawei  => \&backup_Huawei,
 );
 
 my %defined_device = (
@@ -133,7 +134,7 @@ sub can_handle {
 
     #Build %backup_conf
     $backup_conf{backup_ip}   = $opts->{ip};
-    $backup_conf{backup_file} = $opts->{outputdir} . '/configuration.bak';
+    $backup_conf{backup_file} = $opts->{outputdir} . '/configuration';
     my @credential = @{ $defined_credential{ $opts->{ip} } };
     $backup_conf{backup_auth}{user}     = $credential[0];
     $backup_conf{backup_auth}{password} = $credential[1];
@@ -148,12 +149,11 @@ sub can_handle {
         my @oids = keys %oid_method;
 
         # Find longest oid match
-        my ($oid) =
-          sort { length $b <=> length $a }
-          grep { 0 == index $opts->{sysObjectID}, $_ } @oids;
+        my ($oid) = sort { length $b <=> length $a }
+            grep { 0 == index $opts->{sysObjectID}, $_ } @oids;
         if ($oid) {
-            $backup_conf{backup_func} =
-              $defined_backup_func{ $oid_method{$oid} };
+            $backup_conf{backup_func}
+                = $defined_backup_func{ $oid_method{$oid} };
         }
         else {
             Common::Log::Error(
@@ -164,8 +164,9 @@ sub can_handle {
     }
 
     #start a thread if use_thread
-    $backup_conf{working_thread} = threads->create( $backup_conf{backup_func} )
-      if $backup_conf{use_thread};
+    $backup_conf{working_thread}
+        = threads->create( $backup_conf{backup_func} )
+        if $backup_conf{use_thread};
 
     return 1;
 }
@@ -174,15 +175,30 @@ sub custom_files {
 
     # Wait thread finish
     if ( $backup_conf{use_thread} ) {
-        $backup_conf{working_thread}->join();
+        Info("Waiting backup thread finish ...");
+        $backup_conf{configuration} = $backup_conf{working_thread}->join();
     }
     else {
-        $backup_conf{backup_func}();
+        $backup_conf{configuration} = $backup_conf{backup_func}();
     }
+    Info("Backup Done");
+
+    if ( -e $backup_conf{backup_file} ) {
+        Info("Find existing backup configuration, move to configuration.bak");
+        move( $backup_conf{backup_file}, $backup_conf{backup_file} . '.bak' );
+    }
+    Info("Writing into $backup_conf{backup_file} ...");
+    open( my $fh, '>', $backup_conf{backup_file} )
+        or die("Failed to write to backup file");
+    print $fh, $backup_conf{configuration};
+    close $fh;
+    Info("Writing Done");
 }
 
 #---------------------------------------------------
 # Setup Session and a generic cmd func
+# Telenet works in an interactive mode
+# However, SSH commands works in a seperate exec pipe
 #---------------------------------------------------
 sub setupSession {
     switch ( $backup_conf{backup_protocol} ) {
@@ -190,7 +206,8 @@ sub setupSession {
         my $password = $backup_conf{backup_auth}{password};
         my $host     = $backup_conf{backup_ip};
         case 'SSH' {
-            $backup_conf{session} = Net::OpenSSH->new("$user:$password\@$host");
+            $backup_conf{session}
+                = Net::OpenSSH->new("$user:$password\@$host");
         }
         case 'Telnet' {
             $backup_conf{session} = Net::Telnet->new();
@@ -206,38 +223,55 @@ sub setupSession {
 }
 
 sub cmd {
-    switch ($backup_conf{backup_protocol})
-    {
-        case 'SSH' { return $backup_conf{session}->capture(@_); }
+    switch ( $backup_conf{backup_protocol} ) {
+        case 'SSH'    { return $backup_conf{session}->capture(@_); }
         case 'Telnet' { return $backup_conf{session}->cmd(@_); }
     }
 }
 
+sub shutdownSession {
+    switch ( $backup_conf{backup_protocol} ) {
+        case 'SSH'    { $backup_conf{session}->disconnect(1); }
+        case 'Telnet' { $backup_conf{session}->close(); }
+    }
+
+}
+
 #---------------------------------------------------
-# Methods to backup different vendor devices
+# Methods to backup different devices from different vendors
 # subroutine name should be like this:
 # backup_<vendor>_<device_type>
 # All theses backup methods have a copy of backup_conf,
 # which contains all target values.
 #---------------------------------------------------
 sub backup_Cisco {
-    my $output;
-
     $backup_conf{backup_protocol} = 'SSH'
-      unless $backup_conf{backup_protocol};    # Default protocols
+        unless $backup_conf{backup_protocol};    # Default protocols
+    Info(
+        "Start backup_Cisco @ $backup_conf{backup_ip} using $backup_conf{backup_protocol}"
+    );
     setupSession();
-    cmd("terminal width 0");
-    cmd("terminal length 0");
-    $output = cmd("show running");
+    if ( $backup_conf{backup_protocol} eq 'Telnet' ) {
+
+        # For Telnet, no page break for configuration
+        cmd("terminal width 0");
+        cmd("terminal length 0");
+    }
+    my $output = cmd("show running");
+    shutdownSession();
     return $output;
 }
 
 sub backup_Juniper {
-    return;
-}
-
-sub backup_Huawei {
-    return;
+    $backup_conf{backup_protocol} = 'SSH'
+        unless $backup_conf{backup_protocol};
+    Info(
+        "Start backup_Juniper @ $backup_conf{backup_ip} using $backup_conf{backup_protocol}"
+    );
+    setupSession();
+    my $output = cmd('show configuration | no-more');
+    shutdownSession();
+    return $output;
 }
 
 1;
