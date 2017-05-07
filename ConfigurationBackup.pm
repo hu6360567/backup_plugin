@@ -60,6 +60,18 @@ my %backup_conf = (
 my %defined_backup_func = (
     Cisco   => \&backup_Cisco,
     Juniper => \&backup_Juniper,
+    Huawei  => \&backup_Huawei,
+);
+
+# It mapped from oid to backup functions
+# https://www.iana.org/assignments/enterprise-numbers/enterprise-numbers
+# vendor oid can be looked up from the URL
+# OID prefix must starts with .1.3.6.1.4.1
+# Also need to match the longest prefix
+my %oid_method = (
+    '.1.3.6.1.4.1.9'    => 'Cisco',
+    '.1.3.6.1.4.1.2011' => 'Huawei',
+    '.1.3.6.1.4.1.2636' => 'Juniper',
 );
 
 my %defined_device = (
@@ -70,15 +82,6 @@ my %defined_device = (
 my %defined_credential = (
     '1.1.1.1' => [ 'root', 'root' ],
     '2.2.2.2' => [ 'root', 'root' ],
-);
-
-# It mapped from oid to backup functions
-# https://www.iana.org/assignments/enterprise-numbers/enterprise-numbers
-# vendor oid can be looked up from the URL, but device need to
-# Also need to match the longest prefix
-my %oid_method = (
-    '.1.3.6.1.4.1.9'    => 'Cisco',
-    '.1.3.6.1.4.1.2011' => 'Huawei',
 );
 
 #Dynamic load threads according to backup_conf
@@ -272,6 +275,19 @@ sub backup_Juniper {
     my $output = cmd('show configuration | no-more');
     shutdownSession();
     return $output;
+}
+
+sub backup_Huawei {
+    $backup_conf{backup_protocol} = 'SSH'
+        unless $backup_conf{backup_protocol};
+    Info(
+        "Start backup_Huawei @ $backup_conf{backup_ip} using $backup_conf{backup_protocol}"
+    );
+    setupSession();
+    my $output = cmd('display current-configuration');
+    shutdownSession();
+    return $output;
+
 }
 
 1;
