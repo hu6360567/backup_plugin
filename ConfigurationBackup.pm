@@ -34,6 +34,37 @@ our @ISA = qw(genConfig::Plugin);
 my $VERSION   = 0.00;
 my $ATLAS_Ver = 0.00;
 
+
+########################################################################
+# It mapped from oid to backup functions
+# https://www.iana.org/assignments/enterprise-numbers/enterprise-numbers
+# vendor oid can be looked up from the URL
+# OID prefix must starts with .1.3.6.1.4.1
+# Also need to match the longest prefix
+########################################################################
+my %oid_method = (
+    '.1.3.6.1.4.1.9'    => 'Cisco',
+    '.1.3.6.1.4.1.2011' => 'Huawei',
+    '.1.3.6.1.4.1.2636' => 'Juniper',
+);
+
+my %defined_backup_func = (
+    Cisco   => \&backup_Cisco,
+    Juniper => \&backup_Juniper,
+    Huawei  => \&backup_Huawei,
+);
+
+my %defined_device = (
+    '1.1.1.1' => [ 'Cisco',   'telnet' ],
+    '2.2.2.2' => [ 'Juniper', 'ssh' ],
+);
+
+my %defined_credential = (
+    '1.1.1.1' => [ 'root', 'root' ],
+    '2.2.2.2' => [ 'root', 'root' ],
+);
+
+########################################################################
 # We don't need any of other method to build target file.
 # In order to not block other plugins, we have 2 choices:
 # 1. using a thread to run backup task at beginning <can_handle>
@@ -42,6 +73,7 @@ my $ATLAS_Ver = 0.00;
 #
 # func<can_handle> is called first in genConfig.pl
 # func<custom_files> is called last in genConfig.pl
+########################################################################
 my %backup_conf = (
     use_thread      => 0,
     working_thread  => undef,
@@ -57,33 +89,6 @@ my %backup_conf = (
     configuration => undef,
 );
 
-my %defined_backup_func = (
-    Cisco   => \&backup_Cisco,
-    Juniper => \&backup_Juniper,
-    Huawei  => \&backup_Huawei,
-);
-
-# It mapped from oid to backup functions
-# https://www.iana.org/assignments/enterprise-numbers/enterprise-numbers
-# vendor oid can be looked up from the URL
-# OID prefix must starts with .1.3.6.1.4.1
-# Also need to match the longest prefix
-my %oid_method = (
-    '.1.3.6.1.4.1.9'    => 'Cisco',
-    '.1.3.6.1.4.1.2011' => 'Huawei',
-    '.1.3.6.1.4.1.2636' => 'Juniper',
-);
-
-my %defined_device = (
-    '1.1.1.1' => [ 'Cisco',   'telnet' ],
-    '2.2.2.2' => [ 'Juniper', 'ssh' ],
-);
-
-my %defined_credential = (
-    '1.1.1.1' => [ 'root', 'root' ],
-    '2.2.2.2' => [ 'root', 'root' ],
-);
-
 #Dynamic load threads according to backup_conf
 require threads if $backup_conf{use_thread};
 
@@ -94,14 +99,13 @@ require threads if $backup_conf{use_thread};
 # the names should be contained in the sysdescr string
 # returned by the devices. The name is a regular expression.
 ###############################################################################
-my @types = ("Configuration");
+my @types = keys %defined_backup_func;
 
 ###############################################################################
 ### Private variables
 ###############################################################################
 
 my $script = "Configurate Backup Module";
-###############################################################################
 ###############################################################################
 
 #-------------------------------------------------------------------------------
