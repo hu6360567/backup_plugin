@@ -9,7 +9,7 @@
 #
 ###################################################################################################
 
-package test;
+package ConfigurationBackup;
 
 use strict;
 use warnings;
