@@ -34,7 +34,6 @@ our @ISA = qw(genConfig::Plugin);
 my $VERSION   = 0.00;
 my $ATLAS_Ver = 0.00;
 
-
 ########################################################################
 # It mapped from oid to backup functions
 # https://www.iana.org/assignments/enterprise-numbers/enterprise-numbers
@@ -46,12 +45,14 @@ my %oid_method = (
     '.1.3.6.1.4.1.9'    => 'Cisco',
     '.1.3.6.1.4.1.2011' => 'Huawei',
     '.1.3.6.1.4.1.2636' => 'Juniper',
+    '.1.3.6.1.4.1.11'   => 'HP',
 );
 
 my %defined_backup_func = (
     Cisco   => \&backup_Cisco,
     Juniper => \&backup_Juniper,
     Huawei  => \&backup_Huawei,
+    HP      => \&backup_HP,
 );
 
 my %defined_device = (
@@ -59,6 +60,8 @@ my %defined_device = (
     '2.2.2.2' => [ 'Juniper', 'ssh' ],
 );
 
+# No matter of what type of the target device,
+# credential should be provided
 my %defined_credential = (
     '1.1.1.1' => [ 'root', 'root' ],
     '2.2.2.2' => [ 'root', 'root' ],
@@ -79,14 +82,14 @@ my %backup_conf = (
     working_thread  => undef,
     backup_func     => undef,
     backup_ip       => undef,
-    backup_protocol => undef,
+    backup_protocol => undef,    # ['SSH','Telnet']
     backup_auth     => {
         user     => undef,
         password => undef,
     },
-    backup_file   => undef,
-    session       => undef,
-    configuration => undef,
+    backup_file   => undef,      # Backup file location
+    session       => undef,      # Session object
+    configuration => undef,      # Used to store configuration plain text
 );
 
 #Dynamic load threads according to backup_conf
@@ -134,12 +137,15 @@ sub device_types {
 # can_handle
 # IN : opts reference
 # OUT: returns a true if the device can be handled by this plugin
-#-------------------------------------------------------------------------------
+#
+# First, check %defined_device to determine backup method based-on <IP>
+# Second, if it is not predefined, determine backup method based on sysObjectID-------------------------------------------------------------------------------
 
 sub can_handle {
     my ( $self, $opts ) = @_;
 
-    #Build %backup_conf
+    # Build %backup_conf
+
     $backup_conf{backup_ip}   = $opts->{ip};
     $backup_conf{backup_file} = $opts->{outputdir} . '/configuration';
     my @credential = @{ $defined_credential{ $opts->{ip} } };
@@ -217,7 +223,8 @@ sub setupSession {
                 = Net::OpenSSH->new("$user:$password\@$host");
         }
         case 'Telnet' {
-            $backup_conf{session} = Net::Telnet->new();
+            $backup_conf{session}
+                = Net::Telnet->new( Timeout => 120, Errmode => 'return' );
             $backup_conf{session}->open( $backup_conf{backup_ip} );
             $backup_conf{session}->login( $backup_conf{back} );
         }
@@ -225,7 +232,6 @@ sub setupSession {
             Common::Log::Error("Unspported Protol!");
             die("Unspported Protol!");
         }
-
     }
 }
 
@@ -260,7 +266,7 @@ sub backup_Cisco {
     setupSession();
     if ( $backup_conf{backup_protocol} eq 'Telnet' ) {
 
-        # For Telnet, no page break for configuration
+        # For Telnet, set terminal for no page break
         cmd("terminal width 0");
         cmd("terminal length 0");
     }
@@ -276,6 +282,10 @@ sub backup_Juniper {
         "Start backup_Juniper @ $backup_conf{backup_ip} using $backup_conf{backup_protocol}"
     );
     setupSession();
+    if ( $backup_conf{backup_protocol} eq 'Telnet' ) {
+        cmd('set cli screen-length 0');
+        cmd('set cli screen-width 0');
+    }
     my $output = cmd('show configuration | no-more');
     shutdownSession();
     return $output;
@@ -288,10 +298,38 @@ sub backup_Huawei {
         "Start backup_Huawei @ $backup_conf{backup_ip} using $backup_conf{backup_protocol}"
     );
     setupSession();
-    my $output = cmd('display current-configuration');
+    if ( $backup_conf{backup_protocol} eq 'Telnet' ) {
+        cmd("screen-length 0 temporary");
+    }
+    my $output = cmd('display current-configuration all');
     shutdownSession();
     return $output;
+}
 
+sub backup_HP {
+    $backup_conf{backup_protocol} = 'SSH'
+        unless $backup_conf{backup_protocol};
+    Info(
+        "Start backup_HP @ $backup_conf{backup_ip} using $backup_conf{backup_protocol}"
+    );
+    setupSession();
+    my $output = cmd('show run');
+    $output =~ s/^(banner motd )(.*)/$1\#\n$2 \#/m;
+    shutdownSession();
+    return $output;
+}
+
+sub backup_Forti {
+    $backup_conf{backup_protocol} = 'SSH'
+        unless $backup_conf{backup_protocol};
+    Info(
+        "Start backup_Forti @ $backup_conf{backup_ip} using $backup_conf{backup_protocol}"
+    );
+    setupSession();
+    my $output = cmd('show');
+    $output =~ s/^(banner motd )(.*)/$1\#\n$2 \#/m;
+    shutdownSession();
+    return $output;
 }
 
 1;
