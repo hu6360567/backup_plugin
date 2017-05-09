@@ -209,7 +209,7 @@ sub custom_files {
 }
 
 #---------------------------------------------------
-# Setup Session and a generic cmd func
+# Setup/Shutdown Session and a generic cmd func
 # Telenet works in an interactive mode
 # However, SSH commands works in a seperate exec pipe
 #---------------------------------------------------
@@ -256,6 +256,9 @@ sub shutdownSession {
 # backup_<vendor>_<device_type>
 # All theses backup methods have a copy of backup_conf,
 # which contains all target values.
+#
+# Find how to backup other models, you may check
+# https://github.com/ytti/oxidized/tree/master/lib/oxidized/model
 #---------------------------------------------------
 sub backup_Cisco {
     $backup_conf{backup_protocol} = 'SSH'
