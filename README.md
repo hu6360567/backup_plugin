@@ -5,4 +5,4 @@ In our network device monitoring system, we use [Cricket](http://cricket.sourcef
 
 For normal workflow, genDevConfig generates device profile once everyday, Cricket collects data every 15 minutes. Also backup collected data once everyday.
 
-Besides that, we also need to backup network configuration. So we decide to develop a plugin in genDevConfig to backup the device configuration when it generates device profile.
+Besides that, we also need to backup network configuration. So we decide to develop a plugin for genDevConfig to backup the device configuration when it generates device profile.
