@@ -42,17 +42,19 @@ my $ATLAS_Ver = 0.00;
 # Also need to match the longest prefix
 ########################################################################
 my %oid_method = (
-    '.1.3.6.1.4.1.9'    => 'Cisco',
-    '.1.3.6.1.4.1.2011' => 'Huawei',
-    '.1.3.6.1.4.1.2636' => 'Juniper',
-    '.1.3.6.1.4.1.11'   => 'HP',
+    '.1.3.6.1.4.1.9'     => 'Cisco',
+    '.1.3.6.1.4.1.2011'  => 'Huawei',
+    '.1.3.6.1.4.1.2636'  => 'Juniper',
+    '.1.3.6.1.4.1.11'    => 'HP',
+    '.1.3.6.1.4.1.12356' => 'Fortinet,'
 );
 
 my %defined_backup_func = (
-    Cisco   => \&backup_Cisco,
-    Juniper => \&backup_Juniper,
-    Huawei  => \&backup_Huawei,
-    HP      => \&backup_HP,
+    Cisco    => \&backup_Cisco,
+    Juniper  => \&backup_Juniper,
+    Huawei   => \&backup_Huawei,
+    HP       => \&backup_HP,
+    Fortinet => \&backup_Fortinet,
 );
 
 my %defined_device = (
@@ -139,7 +141,8 @@ sub device_types {
 # OUT: returns a true if the device can be handled by this plugin
 #
 # First, check %defined_device to determine backup method based-on <IP>
-# Second, if it is not predefined, determine backup method based on sysObjectID-------------------------------------------------------------------------------
+# Second, if it is not predefined, determine backup method based on sysObjectID
+#------------------------------------------------------------------------------
 
 sub can_handle {
     my ( $self, $opts ) = @_;
@@ -322,11 +325,11 @@ sub backup_HP {
     return $output;
 }
 
-sub backup_Forti {
+sub backup_Fortinet {
     $backup_conf{backup_protocol} = 'SSH'
         unless $backup_conf{backup_protocol};
     Info(
-        "Start backup_Forti @ $backup_conf{backup_ip} using $backup_conf{backup_protocol}"
+        "Start backup_Fortinet @ $backup_conf{backup_ip} using $backup_conf{backup_protocol}"
     );
     setupSession();
     my $output = cmd('show');
